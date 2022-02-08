@@ -40,7 +40,7 @@ object Day10 {
             if (baseBot.giveLow != null) throw IllegalArgumentException("Overwriting Give Low!")
             else baseBot.giveLow = lRec
             val rn = rrr.split(" ")[1].toInt()
-            val rRec: Receiver = if (lrr.startsWith("bot")) {
+            val rRec: Receiver = if (rrr.startsWith("bot")) {
                 bots.firstOrNull { it.num == rn } ?: Robot(rn).also { bots.add(it) }
             } else {
                 outputs.firstOrNull { it.num == rn } ?: Output(rn).also { outputs.add(it) }
@@ -79,7 +79,7 @@ object Day10 {
             if (baseBot.giveLow != null) throw IllegalArgumentException("Overwriting Give Low!")
             else baseBot.giveLow = lRec
             val rn = rrr.split(" ")[1].toInt()
-            val rRec: Receiver = if (lrr.startsWith("bot")) {
+            val rRec: Receiver = if (rrr.startsWith("bot")) {
                 bots.firstOrNull { it.num == rn } ?: Robot(rn, false).also { bots.add(it) }
             } else {
                 outputs.firstOrNull { it.num == rn } ?: Output(rn).also { outputs.add(it) }
@@ -88,13 +88,11 @@ object Day10 {
             else baseBot.giveHigh = rRec
         }
         action.forEach { line ->
-            println(line)
             val (value, botNum) = line.substring(6).split(" goes to bot ").map { it.toInt() }
             val bot = bots.firstOrNull { it.num == botNum } ?: Robot(botNum, false).also { bots.add(it) }
             bot.deposit(Chip(value))
         }
-        println(outputs.sortedBy { it.num }.joinToString { "${it.num}  ${it.deposited}" })
-        return 0
+        return outputs.filter { it.num in 0..2 }.flatMap { it.deposited.map { it.value } }.reduce { a, b -> a * b }
     }
 
     data class Chip(val value: Int)
@@ -110,19 +108,17 @@ object Day10 {
         var giveHigh: Receiver? = null
         override fun deposit(chip: Chip) {
             chips.add(chip)
-            if (chips.map { it.value }.sorted() == listOf(17, 61) && part1)
+            if (part1 && chips.map { it.value }.sorted() == listOf(17, 61))
                 throw IllegalStateException("$num")
             if (chips.size == 2) {
                 val (hi, lo) = chips.sortedByDescending { it.value }
                 if (giveHigh == null) throw IllegalArgumentException("Give High Is Null") else {
-                    if (!part1) println("${name()} gives ${hi.value} to ${giveHigh!!.name()}")
-                    giveHigh!!.deposit(Chip(hi.value))
                     chips.remove(hi)
+                    giveHigh!!.deposit(Chip(hi.value))
                 }
                 if (giveLow == null) throw IllegalArgumentException("Give Low Is Null") else {
-                    if (!part1) println("${name()} gives ${lo.value} to ${giveLow!!.name()}")
-                    giveLow!!.deposit(Chip(lo.value))
                     chips.remove(lo)
+                    giveLow!!.deposit(Chip(lo.value))
                 }
             }
         }
@@ -133,7 +129,6 @@ object Day10 {
     class Output(val num: Int) : Receiver {
         val deposited = mutableListOf<Chip>()
         override fun deposit(chip: Chip) {
-            println("ka-chunk! Chip ${chip.value} deposited!")
             deposited.add(chip)
         }
 
