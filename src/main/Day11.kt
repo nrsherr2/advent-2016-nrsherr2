@@ -2,12 +2,16 @@ import kotlin.system.measureTimeMillis
 
 fun main() {
 
-    //I'm too lazy to parse the plain-english input
 
+    val day11Test = readInput("Day11_Test")
     val day11Input = readInput("Day11_Input")
+
     val exeTime = measureTimeMillis {
-        val part1Output = Day12.part1(day11Input)
-        val part2Output = Day12.part2(day11Input)
+        val part1Example = Day11.part1(day11Test)
+        assertEquals(11,part1Example)
+
+        val part1Output = Day11.part1(day11Input)
+        val part2Output = Day11.part2(day11Input)
 
         println(
             """
@@ -22,11 +26,34 @@ fun main() {
     println("Processing Time: ${exeTime}ms")
 }
 
+/**
+ * pairs - one Generator, one Microchip
+ * chips can generate shield when they have their corresponding generator
+ * if chip is not powered and room contains another generator, chip dies
+ * goal - bring all chips and generators up
+ * elevator - can only hold 2 things with you
+ * need to have at least one thing with you
+ * cannot skip floors
+ *
+ * safe - chipX, chipY
+ * safe - chipX, geneX
+ * safe - chipX, geneX, geneY
+ * safe - geneX, geneY
+ */
 object Day11 {
     fun part1(input: List<String>): Int {
         var lowestSolution = Int.MAX_VALUE
-
-        return 0
+        val initialGameState = readInput(input)
+        var states = listOf(initialGameState)
+        while (states.isNotEmpty()) {
+            val (finished, newCandidates) = states.flatMap { gs -> gs.possibleMoves().map { gs.applyMove(it) } }
+                .filter { it.moves.size <= lowestSolution }
+                .partition { it.finished() }
+            finished.forEach { lowestSolution = minOf(lowestSolution, it.moves.size) }
+            states = newCandidates
+            println("${states.size} $lowestSolution")
+        }
+        return lowestSolution
     }
 
     fun part2(input: List<String>): Int {
@@ -39,53 +66,71 @@ object Day11 {
 
     data class Microchip(override var element: String) : Movable
     data class Generator(override var element: String) : Movable
-
-    class GameState(
-        val initialGameState: Map<Movable, Int>
-    ) {
-        val moves: MutableList<Move> = mutableListOf()
-
-        fun calculateGameState(mvs: List<Move> = moves): Map<Movable, Int> {
-            val s = initialGameState.toMutableMap()
-            mvs.forEach { mv ->
-                if (s[mv.item1] != mv.prevFloor || (mv.item2 != null && s[mv.item2] != mv.prevFloor)) {
-                    throw IllegalArgumentException("Move calculation is bad!")
-                }
-                s[mv.item1] = mv.nextFloor
-                if (mv.item2 != null) s[mv.item2] = mv.nextFloor
+    data class Move(val item1: Movable, val item2: Movable?, val prevFloor: Int, val nextFloor: Int) {
+        fun isValid(state: GameState): Boolean {
+            val allItems = (state.floors[nextFloor].items + item1 + item2).filterNotNull()
+            val allChips = allItems.filterIsInstance<Microchip>()
+            if (allChips.isEmpty()) return true
+            val allGenerators = allItems.filterIsInstance<Generator>()
+            if (allGenerators.isEmpty()) return true
+            allChips.forEach { c -> if (allGenerators.none { it.element == c.element }) return false }
+            state.moves.indexOfFirst { it == this }.takeIf { it > 2 }?.let { matchIndex ->
+                if (state.moves.last() == state.moves[matchIndex - 1] && state.moves[state.moves.lastIndex - 1] == state.moves[matchIndex - 2])
+                    return false
             }
-            return s
-        }
-
-        fun fry() = calculateGameState().invert().any { (level, movables) ->
-            val microchips: List<Microchip> = movables.filter { it is Microchip } as List<Microchip>
-            if (microchips.isEmpty()) false
-            val generators: List<Generator> = movables.filter { it is Generator } as List<Generator>
-            if (generators.isEmpty()) false
-            microchips.any { chip -> generators.none { gen -> gen.element == chip.element } }
-        }
-
-        fun satisfied() = calculateGameState().all { it.value == 4 }
-
-        fun uniqueGameState(incomingMove: Move): Boolean {
-            val newGameState = calculateGameState(moves + incomingMove)
-            return (1..moves.size).none {
-                val sl = moves.subList(0, it)
-                val ngs = calculateGameState(sl)
-                repeatGameState(ngs, newGameState)
-            }
-        }
-
-        private fun repeatGameState(old: Map<Movable, Int>, new: Map<Movable, Int>) =
-            old.entries.all { it.value == new[it.key] }
-
-        private fun Map<Movable, Int>.invert(): Map<Int, List<Movable>> {
-            return entries.groupBy { it.value }.mapValues { it.value.map { it.key } }
+            return true
         }
     }
 
-    data class Move(val item1: Movable, val item2: Movable?, val prevFloor: Int, val nextFloor: Int)
+    data class Floor(val items: MutableList<Movable> = mutableListOf())
+    class GameState(
+        val moves: MutableList<Move> = mutableListOf(),
+        var floors: MutableList<Floor> = mutableListOf(),
+        var currentFloor: Int = 0
+    ) {
+        fun finished() = (0..2).all { floors[it].items.isEmpty() }
 
-    val testInput = listOf("H-1", "Li-1", "HG-2", "LiG-3")
-    val inputInput = listOf("Tm-1", "TmG-1", "PuG-1", "SrG-1", "Pu-2", "Sr-2", "PmG-3", "Pm-3", "RuG-3", "Ru-3")
+        fun applyMove(move: Move): GameState {
+            this.let { originalState ->
+                val floors = originalState.floors.apply {
+                    this[move.prevFloor].items.remove(move.item1)
+                    this[move.nextFloor].items.add(move.item1)
+                    move.item2?.let {
+                        this[move.prevFloor].items.remove(it)
+                        this[move.nextFloor].items.add(it)
+                    }
+                }
+                return GameState(
+                    moves = (originalState.moves + move).toMutableList(),
+                    floors = floors,
+                    currentFloor = move.nextFloor
+                )
+            }
+        }
+
+        fun possibleMoves(): List<Move> {
+            return floors[currentFloor].items.flatMap { item1 ->
+                (floors[currentFloor].items - item1 + null).flatMap { item2 ->
+                    listOf(-1, 1).map { Move(item1, item2, currentFloor, currentFloor + it) }
+                }
+            }
+                .filter { it.nextFloor in 0..3 }
+                .filter { it.isValid(this) }
+        }
+    }
+
+    fun readInput(input: List<String>): GameState {
+        val floors = input.map { line ->
+            val (_, items) = line.split("contains")
+            val movables = items.split(",", "and").mapNotNull {
+                if (it.contains("microchip")) {
+                    Microchip(it.substringAfter("a ").substringBefore("-compatible"))
+                } else if (it.contains("generator")) {
+                    Generator(it.substringAfter("a ").substringBefore(" generator"))
+                } else null
+            }
+            Floor(movables.toMutableList())
+        }
+        return GameState(floors = floors.toMutableList())
+    }
 }
